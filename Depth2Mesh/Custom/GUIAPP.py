@@ -312,7 +312,7 @@ class MeshGeneratorGUI:
     def make_pcd_list(self):
         for i, depth_map in enumerate(self.depthmap_list):
             depth_map = cv2.cvtColor(depth_map, cv2.COLOR_BGR2GRAY)
-            scale = np.sqrt(depth_map.shape[0] * depth_map.shape[1])
+            scale = np.sqrt(depth_map.shape[0] * depth_map.shape[1]) * 0.001
             vertices = map_depth_map_to_point_clouds((1-depth_map) * scale)
             self.pcd_list.append(vertices)
 
