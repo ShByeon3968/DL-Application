@@ -87,39 +87,43 @@ def make_textured_mesh(rgb_image, depth_map,scale=None):
 
     return mesh
 
-def merge_pcd(pcd_files: list, output_file: str):
-    # 첫 번째 포인트클라우드를 기준으로 사용
-    base_pcd = o3d.io.read_point_cloud(pcd_files[0])
-
-    # 나머지 포인트클라우드를 반복적으로 병합
-    for pcd_file in pcd_files[1:]:
-        current_pcd = o3d.io.read_point_cloud(pcd_file)
+def align_point_clouds(pcd_list):
+    """
+    여러 포인트 클라우드를 정합하여 하나의 포인트 클라우드로 만듭니다.
+    
+    Parameters:
+    pcd_list (list): 3D vertices numpy 배열들이 담긴 리스트
+    
+    Returns:
+    open3d.geometry.PointCloud: 정합된 포인트 클라우드
+    """
+    if len(pcd_list) == 0:
+        raise ValueError("The input point cloud list is empty.")
+    
+    # Open3D 포인트 클라우드 객체로 변환
+    o3d_pcd_list = [o3d.geometry.PointCloud() for _ in pcd_list]
+    for o3d_pcd, vertices in zip(o3d_pcd_list, pcd_list):
+        vertices_reshaped = vertices.reshape(-1, 3)
+        o3d_pcd.points = o3d.utility.Vector3dVector(vertices_reshaped)
+    
+    # 초기 포인트 클라우드 설정
+    merged_pcd = o3d_pcd_list[0]
+    
+    # ICP 매개변수 설정
+    threshold = 0.02
+    trans_init = np.eye(4)
+    
+    # 나머지 포인트 클라우드 정합 및 병합
+    for i in tqdm(range(1, len(o3d_pcd_list)), desc="Merging Point Clouds"):
+        source = o3d_pcd_list[i]
+        target = merged_pcd
         
-        # ICP를 사용하여 현재 포인트클라우드를 기준 포인트클라우드에 정렬
-        threshold = 0.02  # ICP 알고리즘의 거리 임계값
-        trans_init = np.asarray([[0.862, 0.011, -0.507, 0.5],
-                             [-0.139, 0.967, -0.215, 0.7],
-                             [0.487, 0.255, 0.835, -1.4], [0.0, 0.0, 0.0, 1.0]])  # 초기 변환 행렬
         reg_p2p = o3d.pipelines.registration.registration_icp(
-            current_pcd, base_pcd, threshold, trans_init,
-            o3d.pipelines.registration.TransformationEstimationPointToPoint())
+            source, target, threshold, trans_init,
+            o3d.pipelines.registration.TransformationEstimationPointToPoint()
+        )
         
-        # 현재 포인트클라우드에 변환 행렬 적용
-        current_pcd.transform(reg_p2p.transformation)
-        
-        # 병합
-        base_pcd += current_pcd
-
-    # 결과를 저장
-    o3d.io.write_point_cloud(output_file, base_pcd)
-    return base_pcd
-
-def registration_pcd(source_pcd, target_pcd):
-    threshold = 0.02  # ICP 알고리즘의 거리 임계값
-    trans_init = np.asarray([[0.862, 0.011, -0.507, 0.5],
-                             [-0.139, 0.967, -0.215, 0.7],
-                             [0.487, 0.255, 0.835, -1.4], [0.0, 0.0, 0.0, 1.0]])
-    reg_p2p = o3d.pipelines.registration.registration_icp(
-        source_pcd, target_pcd, threshold, trans_init,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint())
-    return reg_p2p
+        source.transform(reg_p2p.transformation)
+        merged_pcd += source
+    
+    return merged_pcd

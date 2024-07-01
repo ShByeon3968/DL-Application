@@ -99,7 +99,7 @@ class DepthAnythingGUI:
         self.pause_button.grid(row=7, column=3, padx=10, pady=10, sticky='w')
 
         # New Window button
-        self.new_window_button = tk.Button(root, text="New Window", command=self.open_new_window)
+        self.new_window_button = tk.Button(root, text="Start Mesh Generator", command=self.open_new_window)
         self.new_window_button.grid(row=8, column=0, columnspan=4, pady=20, sticky='we')
 
         # Exit button
@@ -171,6 +171,7 @@ class DepthAnythingGUI:
                     break
 
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame = cv2.resize(frame, (width//2, height//2))
                 frame = Image.fromarray(frame)
                 frame = ImageTk.PhotoImage(frame)
                 self.canvas.create_image(0, 0, anchor=tk.NW, image=frame)
@@ -232,7 +233,7 @@ class DepthAnythingGUI:
         new_window = tk.Toplevel(self.root)
         original_x = self.root.winfo_x()
         original_y = self.root.winfo_y()
-        new_window.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{original_x + 200}+{original_y}")  # 원래 창과 동일한 크기, x 방향으로 100 이동
+        new_window.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{original_x + 500}+{original_y}")  # 원래 창과 동일한 크기, x 방향으로 100 이동
         MeshGeneratorGUI(new_window) 
 
 
@@ -245,7 +246,7 @@ class MeshGeneratorGUI:
         self.default_depthmap_path = "path/to/your/video.mp4"
         self.depthmap_list = []
         self.pcd_list = []
-        self.reg_p2p = None
+        self.res_pcd = None
 
         # Configure grid layout
         self.root.grid_rowconfigure(3, weight=1)
@@ -285,6 +286,7 @@ class MeshGeneratorGUI:
 
     def read_depth_map(self):
         video_path = self.video_path_entry.get()
+        print("Processing...")
         if not video_path:
             messagebox.showerror("Error", "Please provide a video path.")
             return
@@ -302,10 +304,22 @@ class MeshGeneratorGUI:
             self.depthmap_list.append(frame)
 
         cap.release()
+        self.make_pcd_list()
         messagebox.showinfo("Success", f"Read {len(self.depthmap_list)} frames from the video.")
         
-        # merge_pcd(self.pcd_list, "./merged_pcd.ply")
         
+
+    def make_pcd_list(self):
+        for i, depth_map in enumerate(self.depthmap_list):
+            depth_map = cv2.cvtColor(depth_map, cv2.COLOR_BGR2GRAY)
+            scale = np.sqrt(depth_map.shape[0] * depth_map.shape[1])
+            vertices = map_depth_map_to_point_clouds((1-depth_map) * scale)
+            self.pcd_list.append(vertices)
+
+    def depth2mesh(self):
+        self.res_pcd = align_point_clouds(self.pcd_list)
+        
+
     def show_pcd(self):
         o3d.visualization.draw_geometries([self.res_pcd])
 
