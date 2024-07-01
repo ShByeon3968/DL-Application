@@ -86,3 +86,40 @@ def make_textured_mesh(rgb_image, depth_map,scale=None):
     o3d.io.write_triangle_mesh(f'./{rgb_image[:-4]}_textured_mesh.ply', mesh)
 
     return mesh
+
+def merge_pcd(pcd_files: list, output_file: str):
+    # 첫 번째 포인트클라우드를 기준으로 사용
+    base_pcd = o3d.io.read_point_cloud(pcd_files[0])
+
+    # 나머지 포인트클라우드를 반복적으로 병합
+    for pcd_file in pcd_files[1:]:
+        current_pcd = o3d.io.read_point_cloud(pcd_file)
+        
+        # ICP를 사용하여 현재 포인트클라우드를 기준 포인트클라우드에 정렬
+        threshold = 0.02  # ICP 알고리즘의 거리 임계값
+        trans_init = np.asarray([[0.862, 0.011, -0.507, 0.5],
+                             [-0.139, 0.967, -0.215, 0.7],
+                             [0.487, 0.255, 0.835, -1.4], [0.0, 0.0, 0.0, 1.0]])  # 초기 변환 행렬
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+            current_pcd, base_pcd, threshold, trans_init,
+            o3d.pipelines.registration.TransformationEstimationPointToPoint())
+        
+        # 현재 포인트클라우드에 변환 행렬 적용
+        current_pcd.transform(reg_p2p.transformation)
+        
+        # 병합
+        base_pcd += current_pcd
+
+    # 결과를 저장
+    o3d.io.write_point_cloud(output_file, base_pcd)
+    return base_pcd
+
+def registration_pcd(source_pcd, target_pcd):
+    threshold = 0.02  # ICP 알고리즘의 거리 임계값
+    trans_init = np.asarray([[0.862, 0.011, -0.507, 0.5],
+                             [-0.139, 0.967, -0.215, 0.7],
+                             [0.487, 0.255, 0.835, -1.4], [0.0, 0.0, 0.0, 1.0]])
+    reg_p2p = o3d.pipelines.registration.registration_icp(
+        source_pcd, target_pcd, threshold, trans_init,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint())
+    return reg_p2p

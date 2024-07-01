@@ -6,11 +6,13 @@ import threading
 from PIL import Image, ImageTk
 import glob
 import os
+from utils import *
+import os
 
 class DepthAnythingGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Depth Anything V2 GUI")
+        self.root.title("Depth Estimaitor")
         self.video_playing = False
         self.video_paused = False
         self.video_thread = None
@@ -18,9 +20,10 @@ class DepthAnythingGUI:
         # 기본값 설정
         self.default_script_path = "C:/bsh/Python/DL-Application/Depth2Mesh/run_video.py"
         self.default_video_path = "path/to/your/video.mp4"
-        self.default_outdir = "path/to/your/output/directory"
-        self.default_encoder = "vitl"
+        self.default_outdir = "C:/bsh/Python/DL-Application/Depth2Mesh/output"
+        self.default_encoder = "vits"
         self.default_input_size = 512
+        
 
         # Configure grid layout
         self.root.grid_rowconfigure(3, weight=1)
@@ -86,14 +89,18 @@ class DepthAnythingGUI:
 
         # Plot Video button
         self.plot_video_button = tk.Button(root, text="Plot Video", command=self.start_video_thread)
-        self.plot_video_button.grid(row=7, column=3, padx=10, pady=10, sticky='w')
+        self.plot_video_button.grid(row=7, column=0, padx=10, pady=10, sticky='w')
 
         # Play/Pause buttons
         self.play_button = tk.Button(root, text="Play", command=self.play_video, state='disabled')
-        self.play_button.grid(row=8, column=1, padx=10, pady=10, sticky='e')
+        self.play_button.grid(row=7, column=2, padx=10, pady=10, sticky='e')
 
         self.pause_button = tk.Button(root, text="Pause", command=self.pause_video, state='disabled')
-        self.pause_button.grid(row=8, column=2, padx=10, pady=10, sticky='w')
+        self.pause_button.grid(row=7, column=3, padx=10, pady=10, sticky='w')
+
+        # New Window button
+        self.new_window_button = tk.Button(root, text="New Window", command=self.open_new_window)
+        self.new_window_button.grid(row=8, column=0, columnspan=4, pady=20, sticky='we')
 
         # Exit button
         self.exit_button = tk.Button(root, text="Exit", command=self.quit_program)
@@ -153,8 +160,8 @@ class DepthAnythingGUI:
             return
 
         # 비디오 해상도를 가져와 Canvas 크기 설정
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) / 2
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) /2
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.canvas.config(width=width, height=height)
 
         while cap.isOpened():
@@ -220,6 +227,87 @@ class DepthAnythingGUI:
         self.root.quit()
         self.root.destroy()
         cv2.destroyAllWindows()
+
+    def open_new_window(self):
+        new_window = tk.Toplevel(self.root)
+        original_x = self.root.winfo_x()
+        original_y = self.root.winfo_y()
+        new_window.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{original_x + 200}+{original_y}")  # 원래 창과 동일한 크기, x 방향으로 100 이동
+        MeshGeneratorGUI(new_window) 
+
+
+class MeshGeneratorGUI:
+    def __init__(self,root):
+        self.root = root
+        self.root.title("Mesh Generator")
+
+        # 기본값 설정
+        self.default_depthmap_path = "path/to/your/video.mp4"
+        self.depthmap_list = []
+        self.pcd_list = []
+        self.reg_p2p = None
+
+        # Configure grid layout
+        self.root.grid_rowconfigure(3, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
+
+        # Video path
+        self.video_path_label = tk.Label(root, text="Video Path")
+        self.video_path_label.grid(row=0, column=0, padx=10, pady=10, sticky='e')
+        self.video_path_entry = tk.Entry(root, width=50)
+        self.video_path_entry.grid(row=0, column=1, padx=10, pady=10, sticky='we')
+        self.video_path_entry.insert(0, self.default_depthmap_path)  # 기본값 설정
+        self.browse_video_button = tk.Button(root, text="Browse", command=self.browse_video)
+        self.browse_video_button.grid(row=0, column=2, padx=10, pady=10, sticky='w')
+
+
+        # Read Depth map button
+        self.read_depth_button = tk.Button(root, text="Read Depth Map", command=self.read_depth_map)
+        self.read_depth_button.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+
+        # Generate Mesh button
+        self.generate_mesh_button = tk.Button(root, text="Generate Mesh", command=self.depth2mesh)
+        self.generate_mesh_button.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+        # Generate Mesh button
+        self.visualize_pcd_button = tk.Button(root, text="Visualize PCD", command=self.show_pcd)
+        self.visualize_pcd_button.grid(row=1, column=2, padx=10, pady=10, sticky='w')
+        # Open3D Visualization Placeholder
+        self.vis_frame = tk.Frame(root, width=800, height=600)
+        self.vis_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=10, sticky='nsew')
+
+
+
+    def browse_video(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4")])
+        if file_path:
+            self.video_path_entry.delete(0, tk.END)
+            self.video_path_entry.insert(0, file_path)
+
+    def read_depth_map(self):
+        video_path = self.video_path_entry.get()
+        if not video_path:
+            messagebox.showerror("Error", "Please provide a video path.")
+            return
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            messagebox.showerror("Error", "Failed to open the video file.")
+            return
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            self.depthmap_list.append(frame)
+
+        cap.release()
+        messagebox.showinfo("Success", f"Read {len(self.depthmap_list)} frames from the video.")
+        
+        # merge_pcd(self.pcd_list, "./merged_pcd.ply")
+        
+    def show_pcd(self):
+        o3d.visualization.draw_geometries([self.res_pcd])
 
 if __name__ == "__main__":
     root = tk.Tk()
