@@ -6,8 +6,10 @@ import threading
 from PIL import Image, ImageTk
 import glob
 import os
-from utils import *
+import numpy as np
 import os
+from depth2mesh import depth_to_mesh
+import open3d as o3d
 
 class DepthAnythingGUI:
     def __init__(self, root):
@@ -85,7 +87,7 @@ class DepthAnythingGUI:
 
         # Video display area
         self.canvas = tk.Canvas(root, bg="black")
-        self.canvas.grid(row=6, column=0, columnspan=4, padx=10, pady=10, sticky='nsew')
+        self.canvas.grid(row=6, column=1, columnspan=2, padx=10, pady=10, sticky='nsew')
 
         # Plot Video button
         self.plot_video_button = tk.Button(root, text="Plot Video", command=self.start_video_thread)
@@ -162,7 +164,7 @@ class DepthAnythingGUI:
         # 비디오 해상도를 가져와 Canvas 크기 설정
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.canvas.config(width=width, height=height)
+        self.canvas.config(width=width//2, height=height//2)
 
         while cap.isOpened():
             if self.video_playing and not self.video_paused:
@@ -247,6 +249,7 @@ class MeshGeneratorGUI:
         self.depthmap_list = []
         self.pcd_list = []
         self.res_pcd = None
+        self.output_mesh = None
 
         # Configure grid layout
         self.root.grid_rowconfigure(3, weight=1)
@@ -269,17 +272,15 @@ class MeshGeneratorGUI:
         # Generate Mesh button
         self.generate_mesh_button = tk.Button(root, text="Generate Mesh", command=self.depth2mesh)
         self.generate_mesh_button.grid(row=1, column=1, padx=10, pady=10, sticky='w')
-        # Generate Mesh button
-        self.visualize_pcd_button = tk.Button(root, text="Visualize PCD", command=self.show_pcd)
-        self.visualize_pcd_button.grid(row=1, column=2, padx=10, pady=10, sticky='w')
-        # Open3D Visualization Placeholder
-        self.vis_frame = tk.Frame(root, width=800, height=600)
-        self.vis_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=10, sticky='nsew')
+
+        # Show Mesh button
+        self.show_mesh_button = tk.Button(root, text="Show Mesh", command=self.showMesh)
+        self.show_mesh_button.grid(row=1, column=2, padx=10, pady=10, sticky='w')
 
 
 
     def browse_video(self):
-        file_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4")])
+        file_path = filedialog.askopenfilename(filetypes=[("Video Files", "*.mp4"), ("Image Files", "*.jpg;*.png")])
         if file_path:
             self.video_path_entry.delete(0, tk.END)
             self.video_path_entry.insert(0, file_path)
@@ -291,37 +292,52 @@ class MeshGeneratorGUI:
             messagebox.showerror("Error", "Please provide a video path.")
             return
 
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            messagebox.showerror("Error", "Failed to open the video file.")
-            return
+        if video_path.lower().endswith(('.mp4')):
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                messagebox.showerror("Error", "Failed to open the video file.")
+                return
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
+                self.depthmap_list.append(frame)
+
+            cap.release()
+            messagebox.showinfo("Success", f"Read {len(self.depthmap_list)} frames from the video.")
+        
+        elif video_path.lower().endswith(('.jpg', '.png')):
+            frame = cv2.imread(video_path)
+            if frame is None:
+                messagebox.showerror("Error", "Failed to open the image file.")
+                return
+            
             self.depthmap_list.append(frame)
+            messagebox.showinfo("Success", f"Read 1 frame from the image file.")
 
-        cap.release()
-        self.make_pcd_list()
-        messagebox.showinfo("Success", f"Read {len(self.depthmap_list)} frames from the video.")
         
         
-
-    def make_pcd_list(self):
-        for i, depth_map in enumerate(self.depthmap_list):
-            depth_map = cv2.cvtColor(depth_map, cv2.COLOR_BGR2GRAY)
-            scale = np.sqrt(depth_map.shape[0] * depth_map.shape[1]) * 0.001
-            vertices = map_depth_map_to_point_clouds((1-depth_map) * scale)
-            self.pcd_list.append(vertices)
 
     def depth2mesh(self):
-        self.res_pcd = align_point_clouds(self.pcd_list)
+        for depth in self.depthmap_list:
+            depth = cv2.cvtColor(depth,cv2.COLOR_BGR2GRAY)
+            depth = np.array(depth,dtype=np.float32)
+            self.output_mesh = depth_to_mesh(depth=depth)
+        messagebox.showinfo("Success", f"Mesh Generation is Done.")
+
+    def showMesh(self):
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(self.output_mesh.vertices)
+        mesh.triangles = o3d.utility.Vector3iVector(self.output_mesh.triangles)
+
+        # Save the mesh to a file
+        o3d.io.write_triangle_mesh("output.obj", mesh)
+        messagebox.showinfo("Success", f"메쉬가 저장됨.")
+
         
 
-    def show_pcd(self):
-        o3d.visualization.draw_geometries([self.res_pcd])
 
 if __name__ == "__main__":
     root = tk.Tk()
