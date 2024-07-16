@@ -235,7 +235,7 @@ class DepthAnythingGUI:
         new_window = tk.Toplevel(self.root)
         original_x = self.root.winfo_x()
         original_y = self.root.winfo_y()
-        new_window.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{original_x + 500}+{original_y}")  # 원래 창과 동일한 크기, x 방향으로 100 이동
+        new_window.geometry(f"{self.root.winfo_width()}x{self.root.winfo_height()}+{original_x + 750}+{original_y}")  # 원래 창과 동일한 크기, x 방향으로 100 이동
         MeshGeneratorGUI(new_window) 
 
 
