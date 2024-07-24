@@ -5,7 +5,6 @@ import os
 import glob
 import tkinter as tk
 from tkinter import filedialog, messagebox
-
 class VideoProcessorApp:
     def __init__(self, root):
         self.root = root
